@@ -1,0 +1,158 @@
+---
+title: "EECA Energy End Use Database analysis"
+author: "Ben Anderson (dataknut@icloud.com)"
+date: 'Last run at: `r Sys.time()`'
+output: 
+  bookdown::html_document2:
+    fig_caption: yes
+    toc: TRUE
+    toc_depth: 4
+    toc_float: TRUE
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE) # but folded by yaml setting
+
+library(dkUtils) # https://github.com/dataknut/dkUtils
+
+myLibs <- c("data.table", # fast data munching
+            "ggplot2", # plots obvs
+            "plotly"
+            )
+dkUtils::loadLibraries(myLibs) # load the libs (installs if not present)
+```
+
+# Introduction
+
+Analysis of EECA's Energy End Use Data for New Zealand.
+
+ * Data: https://www.eeca.govt.nz/insights/data-tools/energy-end-use-database/
+ * Visualisation tool: https://www.eeca.govt.nz/insights/data-tools/energy-end-use-database/
+
+# Data
+
+```{r loadData}
+dataFile <- path.expand("~/Dropbox/data/EECA/eeud_data-2024-08-16-657.csv")
+
+dt <- data.table::fread(dataFile)
+
+```
+
+The data gives total energy used (TJ) per year for different purposes by different sectors and by type.
+
+For example, Figure \@ref(fig:totalBySectorGroup) shows total energy use over time by sector group while Figure \@ref(fig:totalByFuel) shows the total by energy (fuel) type.
+
+```{r totalBySectorGroup, fig.cap="Energy use by sector over time"}
+
+make_colPlot <- function(dt, xVar, yVar, fillVar, scaleVar){
+  p <- ggplot2::ggplot(dt, aes(x = get(xVar), 
+                               y = get(yVar), 
+                               fill = get(fillVar))) +
+    geom_col() +
+    scale_fill_discrete(name = scaleVar)
+  return(p)
+}
+
+plotDT <- dt[, .(Total_TJ = sum(TJ,na.rm = TRUE)),
+             keyby = .(SectorGroup, Period)]
+
+make_colPlot(plotDT, "Period", "Total_TJ", "SectorGroup", "Sector") +
+  labs(x = "Year", y = "Total TJ")
+
+message("2022 total")
+sum(plotDT[Period == 2022, Total_TJ])
+
+```
+
+```{r totalByFuel, fig.cap="Energy use by fuel group over time"}
+
+plotDT <- dt[, .(Total_TJ = sum(TJ, na.rm = TRUE)),
+             keyby = .(FuelGroup, Period)]
+
+make_colPlot(plotDT, "Period", "Total_TJ", "FuelGroup", "FuelGroup") +
+  labs(x = "Year", y = "Total TJ")
+
+message("2022 total")
+sum(plotDT[Period == 2022, Total_TJ])
+
+```
+
+
+```{r totalElecBySector, fig.cap="Electricity use by sector over time"}
+
+plotDT <- dt[Fuel %like% "Electricity", .(Total_TJ = sum(TJ, na.rm = TRUE)),
+             keyby = .(SectorGroup, Period)]
+
+make_colPlot(plotDT, "Period", "Total_TJ", "SectorGroup", "SectorGroup") +
+  labs(x = "Year", y = "Total TJ")
+message("2022 total electricity")
+sum(plotDT[Period == 2022, Total_TJ])
+
+```
+
+# Residential electricity use
+
+```{r descStats, fig.width=8}
+
+ggplot2::ggplot(dt[Fuel %like% "Electricity" &
+                     Sector %like% "Residential"],
+                aes(x = Period, y = TJ, fill = EndUseGroup)) +
+  geom_col(position = "stack")
+
+elec_tj <- dt[Fuel %like% "Electricity"]
+elec_tj[, TJ_pc := 100 * TJ/sum(TJ, na.rm = TRUE), keyby = .(Period)]
+
+resElec_2022_pc <- sum(elec_tj[Period == 2022 &
+                                 Sector %like% "Residential", TJ_pc])
+resElec_2022 <- sum(elec_tj[Period == 2022 &
+                                 Sector %like% "Residential", TJ])
+
+resElec_2022_spaceHeat <- sum(elec_tj[Period == 2022 &
+                                 Sector %like% "Residential" &
+                                   EndUse %like% "Space Heating", TJ])
+resElec_2022_spaceHeat_pc <- sum(elec_tj[Period == 2022 &
+                                 Sector %like% "Residential" &
+                                   EndUse %like% "Space Heating", TJ_pc])
+
+```
+
+```{r residentialElecHeat, fig.cap="Electricity used for heat"}
+p <- ggplot2::ggplot(dt[Fuel %like% "Electricity" &
+                     Sector %like% "Residential" &
+                                   EndUse %like% "Heat"],
+                aes(x = Period, y = TJ, 
+                    fill = Technology
+                    )) +
+  geom_col(position = "stack") +
+  theme(legend.position = "bottom")
+
+plotly::ggplotly(p)
+```
+
+
+2022
+
+ * residential = `r prettyNum(resElec_2022, big.mark = ",")` TJ (`r round(resElec_2022_pc,1)` % of all electricity)
+ * residential space heating = `r prettyNum(resElec_2022_spaceHeat, big.mark = ",")` TJ (`r round(resElec_2022_spaceHeat_pc,1)` % of all electricity)
+
+
+```{r residentialHeat}
+
+ggplot2::ggplot(elec_tj[Sector %like% "Residential" &
+                          EndUse %like% "Space Heat"], aes(x = Period,
+                        y = TJ,
+                        colour = Technology))+
+  geom_line()
+  # theme(legend.position = "bottom") +
+  # guides(colour=guide_legend(ncol=1))
+
+
+ggplot2::ggplot(elec_tj[Sector %like% "Residential" &
+                          EndUse %like% "Space Heat"], aes(x = Period,
+                        y = TJ_pc,
+                        colour = Technology))+
+  geom_line() +
+  labs(y = "% total electricity")
+```
+
