@@ -91,36 +91,62 @@ sum(plotDT[Period == 2022, Total_TJ])
 
 ```
 
-# Residential electricity use
+# Residential energy use
 
-```{r descStats, fig.width=8}
 
-ggplot2::ggplot(dt[Fuel %like% "Electricity" &
-                     Sector %like% "Residential"],
-                aes(x = Period, y = TJ, fill = EndUseGroup)) +
+```{r descPlot, fig.width=8}
+dt[, TJ_pc := 100 * TJ/sum(TJ, na.rm = TRUE), keyby = .(Period)]
+
+res_dt <- dt[Sector %like% "Residential"]
+
+res_dt[, TJ_res_pc := 100 * TJ/sum(TJ), keyby = .(Period)]
+
+ggplot2::ggplot(res_dt,
+                aes(x = Period, y = TJ, fill = paste0(EndUseGroup, " - ", Fuel))) +
   geom_col(position = "stack")
 
-elec_tj <- dt[Fuel %like% "Electricity"]
-elec_tj[, TJ_pc := 100 * TJ/sum(TJ, na.rm = TRUE), keyby = .(Period)]
+ggplot2::ggplot(res_dt,
+                aes(x = Period, y = TJ_res_pc, fill = paste0(EndUseGroup, " - ", Fuel))) +
+  geom_col(position = "stack")
 
-resElec_2022_pc <- sum(elec_tj[Period == 2022 &
-                                 Sector %like% "Residential", TJ_pc])
-resElec_2022 <- sum(elec_tj[Period == 2022 &
-                                 Sector %like% "Residential", TJ])
+t <- res_dt[Period == 2022, .(sum_TJ = sum(TJ),
+                              TJ_pc = sum(TJ_pc, na.rm = TRUE),
+                              TJ_res_pc = sum(TJ_res_pc)), keyby = .(EndUse, Fuel)]
 
-resElec_2022_spaceHeat <- sum(elec_tj[Period == 2022 &
-                                 Sector %like% "Residential" &
-                                   EndUse %like% "Space Heating", TJ])
-resElec_2022_spaceHeat_pc <- sum(elec_tj[Period == 2022 &
-                                 Sector %like% "Residential" &
-                                   EndUse %like% "Space Heating", TJ_pc])
+knitr::kable(t, caption = "Summary for 2022", digits = 2)
+```
+
+```{r}
+res_dt[EndUse %like% "Water", branzCat := "Water heating"]
+res_dt[EndUse %like% "Space" , branzCat := "Space heating"]
+res_dt[EndUse %like% "Cooking", branzCat := "Cooking"]
+res_dt[Fuel %like% "Electricity" & 
+         is.na(branzCat), branzCat := "Lighting, refrigeration & other electricity uses"]
+
+bt <- res_dt[Period == 2022 & !is.na(branzCat), .(sum_TJ = sum(TJ),
+                                        TJ_pc= sum(TJ_pc, na.rm = TRUE),
+                              TJ_res_pc = sum(TJ_res_pc)), keyby = .(branzCat)]
+bt[, TJ_branzCat_pc := 100 * sum_TJ/sum(sum_TJ)]
+knitr::kable(bt, caption = "Summary for 2022", digits = 2)
+```
+
+
+## Residential electricity use
+
+```{r descStats, fig.width=8}
+dt[, TJ_fuel_pc := 100 * TJ/sum(TJ, na.rm = TRUE), keyby = .(Fuel, Period)]
+
+res_elec_dt <- dt[Fuel %like% "Electricity" &
+                     Sector %like% "Residential"]
+
+ggplot2::ggplot(res_elec_dt,
+                aes(x = Period, y = TJ, fill = EndUseGroup)) +
+  geom_col(position = "stack")
 
 ```
 
 ```{r residentialElecHeat, fig.cap="Electricity used for heat"}
-p <- ggplot2::ggplot(dt[Fuel %like% "Electricity" &
-                     Sector %like% "Residential" &
-                                   EndUse %like% "Heat"],
+p <- ggplot2::ggplot(res_elec_dt[EndUse %like% "Heat"],
                 aes(x = Period, y = TJ, 
                     fill = Technology
                     )) +
@@ -130,6 +156,22 @@ p <- ggplot2::ggplot(dt[Fuel %like% "Electricity" &
 plotly::ggplotly(p)
 ```
 
+```{r stats2022}
+resElec_2022_pc <- sum(res_elec_dt[Period == 2022, TJ_fuel_pc])
+resElec_2022 <- sum(res_elec_dt[Period == 2022, TJ])
+
+resElec_2022_spaceHeat <- sum(res_elec_dt[Period == 2022 &
+                                   EndUse %like% "Space Heating", TJ])
+resElec_2022_spaceHeat_pc <- sum(res_elec_dt[Period == 2022 &
+                                   EndUse %like% "Space Heating", TJ_fuel_pc])
+
+resElec_2022_dt <- res_elec_dt[Period == 2022, .(total_TJ = sum(TJ, na.rm = TRUE),
+                                             total_pc = sum(TJ_pc, na.rm = TRUE),
+                                             total_elec_pc = sum(TJ_fuel_pc, na.rm = TRUE)),
+                           keyby = .(Sector, EndUseGroup, EndUse)]
+resElec_2022_dt[, resElec_pc := 100 * total_TJ/sum(total_TJ)]
+knitr::kable(resElec_2022_dt, digits = 2, caption = "2022 residential electricity use summary")
+```
 
 2022
 
@@ -139,8 +181,7 @@ plotly::ggplotly(p)
 
 ```{r residentialHeat}
 
-ggplot2::ggplot(elec_tj[Sector %like% "Residential" &
-                          EndUse %like% "Space Heat"], aes(x = Period,
+ggplot2::ggplot(res_elec_dt[EndUse %like% "Space Heat"], aes(x = Period,
                         y = TJ,
                         colour = Technology))+
   geom_line()
@@ -148,11 +189,20 @@ ggplot2::ggplot(elec_tj[Sector %like% "Residential" &
   # guides(colour=guide_legend(ncol=1))
 
 
-ggplot2::ggplot(elec_tj[Sector %like% "Residential" &
-                          EndUse %like% "Space Heat"], aes(x = Period,
-                        y = TJ_pc,
+ggplot2::ggplot(res_elec_dt[EndUse %like% "Space Heat"], aes(x = Period,
+                        y = TJ_fuel_pc,
                         colour = Technology))+
   geom_line() +
   labs(y = "% total electricity")
+
+res_elec_dt[, resElec_pc := 100 * TJ/sum(TJ), keyby = .(Period)]
+
+ggplot2::ggplot(res_elec_dt[EndUse %like% "Space Heat"], aes(x = Period,
+                        y = resElec_pc,
+                        colour = Technology))+
+  geom_line() +
+  labs(y = "% residential electricity")
+
 ```
 
+Oh. Well that's interesting... The % of residential electrity used for these two types of heat have never been updated...
